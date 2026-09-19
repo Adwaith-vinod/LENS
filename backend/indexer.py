@@ -1,5 +1,4 @@
-from pathlib import Path
-
+from scanner import scan_directory
 from text_extractor import extract_text
 from chunker import chunk_text
 from sentence_transformers import SentenceTransformer
@@ -8,28 +7,41 @@ from sentence_transformers import SentenceTransformer
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-def index_file(file_path):
+def index_directory(folder_path):
 
-    # 1. Extract text
-    text = extract_text(file_path)
+    files = scan_directory(folder_path)
 
-    if not text:
-        print("No text found.")
-        return
+    all_chunks = []
+    all_embeddings = []
 
-    # 2. Split text into chunks
-    chunks = chunk_text(text, 500)
+    for file in files:
 
-    # 3. Convert chunks into embeddings
-    embeddings = model.encode(chunks)
+        print(f"Processing: {file.name}")
 
-    print("File:", file_path)
-    print("Number of chunks:", len(chunks))
-    print("Embedding shape:", embeddings.shape)
+        text = extract_text(file)
 
-    return chunks, embeddings
+        if not text:
+            print("  No text found. Skipping.")
+            continue
+
+        chunks = chunk_text(text, 500)
+
+        embeddings = model.encode(chunks)
+
+        all_chunks.extend(chunks)
+        all_embeddings.extend(embeddings)
+
+        print(f"  Chunks: {len(chunks)}")
+
+    return all_chunks, all_embeddings
 
 
-file = "C:/Users/adwai/OneDrive/Documents/INTERNREPORT[1]_final_final.pdf"
+if __name__ == "__main__":
 
-chunks, embeddings = index_file(file)
+    folder = "C:/Users/adwai/OneDrive/Documents"
+
+    chunks, embeddings = index_directory(folder)
+
+    print("\nIndexing complete!")
+    print("Total chunks:", len(chunks))
+    print("Total embeddings:", len(embeddings))
