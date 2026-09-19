@@ -13,6 +13,9 @@ def index_directory(folder_path):
 
     all_chunks = []
     all_embeddings = []
+    all_metadata = []
+
+    chunk_id = 0
 
     for file in files:
 
@@ -28,20 +31,35 @@ def index_directory(folder_path):
 
         embeddings = model.encode(chunks)
 
-        all_chunks.extend(chunks)
-        all_embeddings.extend(embeddings)
+        for chunk, embedding in zip(chunks, embeddings):
+
+            metadata = {
+                "chunk_id": chunk_id,
+                "file_name": file.name,
+                "file_path": str(file)
+            }
+
+            all_chunks.append(chunk)
+            all_embeddings.append(embedding)
+            all_metadata.append(metadata)
+
+            chunk_id += 1
 
         print(f"  Chunks: {len(chunks)}")
 
-    return all_chunks, all_embeddings
+    return all_chunks, all_embeddings, all_metadata
 
 
 if __name__ == "__main__":
 
     folder = "C:/Users/adwai/OneDrive/Documents"
 
-    chunks, embeddings = index_directory(folder)
+    chunks, embeddings, metadata = index_directory(folder)
 
     print("\nIndexing complete!")
     print("Total chunks:", len(chunks))
     print("Total embeddings:", len(embeddings))
+    print("Total metadata:", len(metadata))
+
+    print("\nExample metadata:")
+    print(metadata[0])
