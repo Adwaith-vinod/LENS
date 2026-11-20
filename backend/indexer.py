@@ -2,6 +2,7 @@ from scanner import scan_directory
 from text_extractor import extract_text
 from chunker import chunk_text
 from sentence_transformers import SentenceTransformer
+from vector_store import create_index
 
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -56,10 +57,14 @@ if __name__ == "__main__":
 
     chunks, embeddings, metadata = index_directory(folder)
 
+    index = create_index(embeddings)
+
     print("\nIndexing complete!")
     print("Total chunks:", len(chunks))
     print("Total embeddings:", len(embeddings))
     print("Total metadata:", len(metadata))
+    print("Vectors in FAISS:", index.ntotal)
 
-    print("\nExample metadata:")
-    print(metadata[0])
+    if metadata:
+        print("\nExample metadata:")
+        print(metadata[0])
