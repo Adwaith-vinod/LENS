@@ -1,12 +1,39 @@
+# Python Virtual Environments
 venv/
+.venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local LENS Data Directory (never commit indexed data)
 data/
+previews/
+*.index
+*.db
+*.db-wal
+*.db-shm
+.token
+
+# IDE & Editor
 .vscode/
+.idea/
+*.swp
+*.swo
 
-# Dependencies
+# Node / Frontend
 node_modules/
-
 **/node_modules/
+frontend/dist/
 
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
