@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Play, CheckCircle2, AlertTriangle, Layers, FileCode, Clock, HardDrive, XCircle } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function IndexingDashboard() {
   const [stats, setStats] = useState(null);
@@ -8,12 +9,12 @@ export default function IndexingDashboard() {
   const [msg, setMsg] = useState('');
 
   const fetchStatus = () => {
-    fetch('/api/index/status')
+    apiFetch('/api/index/status')
       .then((r) => r.json())
       .then(setStatus)
       .catch(console.error);
 
-    fetch('/api/stats')
+    apiFetch('/api/stats')
       .then((r) => r.json())
       .then(setStats)
       .catch(console.error);
@@ -27,7 +28,7 @@ export default function IndexingDashboard() {
 
   const handleStartIndexing = () => {
     setLoading(true);
-    fetch('/api/index/start', { method: 'POST' })
+    apiFetch('/api/index/start', { method: 'POST' })
       .then((r) => r.json())
       .then((d) => {
         setMsg(d.message);
@@ -38,7 +39,7 @@ export default function IndexingDashboard() {
 
   const handleRescan = () => {
     setLoading(true);
-    fetch('/api/index/rescan', { method: 'POST' })
+    apiFetch('/api/index/rescan', { method: 'POST' })
       .then((r) => r.json())
       .then((d) => {
         setMsg(d.message);
@@ -48,7 +49,7 @@ export default function IndexingDashboard() {
   };
 
   const handleCancel = () => {
-    fetch('/api/index/cancel', { method: 'POST' })
+    apiFetch('/api/index/cancel', { method: 'POST' })
       .then((r) => r.json())
       .then((d) => {
         setMsg(d.message);

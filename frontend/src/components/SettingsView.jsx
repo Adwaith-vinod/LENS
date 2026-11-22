@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, FolderPlus, Trash2, Save, Check, HardDrive, ShieldCheck } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function SettingsView() {
   const [config, setConfig] = useState(null);
@@ -9,14 +10,14 @@ export default function SettingsView() {
   const [systemDrives, setSystemDrives] = useState([]);
 
   useEffect(() => {
-    fetch('/api/config')
+    apiFetch('/api/config')
       .then((r) => r.json())
       .then((c) => {
         setConfig(c);
         setLoading(false);
       });
 
-    fetch('/api/system/drives')
+    apiFetch('/api/system/drives')
       .then((r) => r.json())
       .then((d) => setSystemDrives(d.drives || []))
       .catch(console.error);
@@ -40,7 +41,7 @@ export default function SettingsView() {
   };
 
   const handleSave = () => {
-    fetch('/api/config', {
+    apiFetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config)

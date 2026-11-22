@@ -24,23 +24,29 @@ def test_token_auth_protection(monkeypatch):
     # Disable test mode bypass
     monkeypatch.delenv("LENS_TEST_MODE", raising=False)
 
-    # Bootstrap endpoint is accessible without token
+    # Bootstrap endpoint is accessible without token and sets lens_token cookie
     res = client.get("/api/bootstrap")
     assert res.status_code == 200
     token = res.json()["token"]
     assert len(token) > 20
+    assert "lens_token" in res.cookies
 
-    # Request to mutating route without token fails with 401
-    res = client.post("/api/index/cancel")
+    # Request to mutating route without token fails with 401 (use new client without cookies)
+    unauthed_client = TestClient(app)
+    res = unauthed_client.post("/api/index/cancel")
     assert res.status_code == 401
     assert "Unauthorized" in res.json()["detail"]
 
     # Request with invalid token fails with 401
-    res = client.post("/api/index/cancel", headers={"X-LENS-Token": "invalid-token-1234"})
+    res = unauthed_client.post("/api/index/cancel", headers={"X-LENS-Token": "invalid-token-1234"})
     assert res.status_code == 401
 
-    # Request with valid token succeeds
-    res = client.post("/api/index/cancel", headers={"X-LENS-Token": token})
+    # Request with valid header token succeeds
+    res = unauthed_client.post("/api/index/cancel", headers={"X-LENS-Token": token})
+    assert res.status_code == 200
+
+    # Request with valid cookie succeeds
+    res = client.post("/api/index/cancel")
     assert res.status_code == 200
 
 

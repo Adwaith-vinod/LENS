@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Folder, FileText, Check, AlertCircle } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function PreviewModal({ fileId, onClose, onOpenFile, onOpenLocation }) {
   const [data, setData] = useState(null);
@@ -9,7 +10,7 @@ export default function PreviewModal({ fileId, onClose, onOpenFile, onOpenLocati
   useEffect(() => {
     if (!fileId) return;
     setLoading(true);
-    fetch(`/api/files/${fileId}/preview`)
+    apiFetch(`/api/files/${fileId}/preview`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load file preview');
         return res.json();

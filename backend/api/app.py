@@ -3,7 +3,7 @@ import secrets
 import logging
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -37,12 +37,13 @@ def get_auth_token() -> str:
     return token
 
 
-def require_token(x_lens_token: Optional[str] = Header(None)):
+def require_token(request: Request, x_lens_token: Optional[str] = Header(None)):
     """Security check ensuring requests to mutating endpoints possess the local session token."""
     if os.environ.get("LENS_TEST_MODE") == "1":
         return True
     expected = get_auth_token()
-    if not x_lens_token or not secrets.compare_digest(x_lens_token, expected):
+    token = x_lens_token or request.cookies.get("lens_token")
+    if not token or not secrets.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing X-LENS-Token")
     return True
 
@@ -136,10 +137,18 @@ def health_check():
 
 
 @app.get("/api/bootstrap")
-def bootstrap_session():
-    """Returns local session token for authorized frontend interactions."""
+def bootstrap_session(response: Response):
+    """Returns local session token for authorized frontend interactions and sets session cookie."""
+    token = get_auth_token()
+    response.set_cookie(
+        key="lens_token",
+        value=token,
+        httponly=False,
+        samesite="lax",
+        path="/"
+    )
     return {
-        "token": get_auth_token(),
+        "token": token,
         "app": "LENS",
         "version": "1.0.0"
     }

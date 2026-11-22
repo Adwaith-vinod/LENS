@@ -22,6 +22,7 @@ import {
 import IndexingDashboard from './components/IndexingDashboard';
 import SettingsView from './components/SettingsView';
 import PreviewModal from './components/PreviewModal';
+import { apiFetch, getAuthToken } from './api';
 
 const CATEGORIES = [
   { id: 'all', label: 'All Files', icon: Layers },
@@ -55,9 +56,10 @@ export default function App() {
   const [systemStats, setSystemStats] = useState(null);
   const searchReqIdRef = useRef(0);
 
-  // Poll stats for status badge
+  // Poll stats for status badge & bootstrap token
   useEffect(() => {
-    fetch('/api/stats')
+    getAuthToken();
+    apiFetch('/api/stats')
       .then((r) => r.json())
       .then(setSystemStats)
       .catch(() => {});
@@ -84,7 +86,7 @@ export default function App() {
       min_score: 0.15
     };
 
-    fetch('/api/search', {
+    apiFetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -123,7 +125,7 @@ export default function App() {
           body: JSON.stringify({ file_path: filePathOrId })
         };
 
-    fetch(url, options)
+    apiFetch(url, options)
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {
@@ -146,7 +148,7 @@ export default function App() {
           body: JSON.stringify({ file_path: filePathOrId })
         };
 
-    fetch(url, options)
+    apiFetch(url, options)
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {
