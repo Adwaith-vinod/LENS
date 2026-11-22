@@ -91,12 +91,15 @@ class LensConfig:
         self.excluded_directories: List[str] = [
             "node_modules", ".git", ".venv", "venv", "__pycache__",
             "AppData", "Program Files", "Program Files (x86)", "Windows",
-            "$Recycle.Bin", "System Volume Information", "cache", "temp", "tmp"
+            "$Recycle.Bin", "System Volume Information", "cache", "temp", "tmp",
+            "build", "dist", "dataset", "datasets", ".metadata", "META-INF",
+            "site-packages"
         ]
         self.max_file_size_bytes: int = MAX_FILE_SIZE_BYTES
         self.chunk_size: int = DEFAULT_CHUNK_SIZE
         self.chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
         self.enable_watchdog: bool = False
+        self.index_structured_data: bool = True
         self.load()
 
     def load(self):
@@ -115,6 +118,7 @@ class LensConfig:
                     self.chunk_size = data.get("chunk_size", self.chunk_size)
                     self.chunk_overlap = data.get("chunk_overlap", self.chunk_overlap)
                     self.enable_watchdog = data.get("enable_watchdog", self.enable_watchdog)
+                    self.index_structured_data = data.get("index_structured_data", self.index_structured_data)
             except Exception as e:
                 logger.warning(f"Failed to load config file: {e}")
 
@@ -126,7 +130,8 @@ class LensConfig:
                 "max_file_size_bytes": self.max_file_size_bytes,
                 "chunk_size": self.chunk_size,
                 "chunk_overlap": self.chunk_overlap,
-                "enable_watchdog": self.enable_watchdog
+                "enable_watchdog": self.enable_watchdog,
+                "index_structured_data": self.index_structured_data
             }
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)

@@ -55,6 +55,7 @@ class ConfigUpdateRequest(BaseModel):
     chunk_size: Optional[int] = None
     chunk_overlap: Optional[int] = None
     enable_watchdog: Optional[bool] = None
+    index_structured_data: Optional[bool] = None
 
 
 class OpenFileRequest(BaseModel):
@@ -197,12 +198,33 @@ def get_config():
         "max_file_size_bytes": config.max_file_size_bytes,
         "chunk_size": config.chunk_size,
         "chunk_overlap": config.chunk_overlap,
-        "enable_watchdog": config.enable_watchdog
+        "enable_watchdog": config.enable_watchdog,
+        "index_structured_data": getattr(config, "index_structured_data", True)
     }
 
 
 @app.post("/api/config")
 def update_config(req: ConfigUpdateRequest):
+    # Validate chunk_overlap < chunk_size
+    new_size = req.chunk_size if req.chunk_size is not None else config.chunk_size
+    new_overlap = req.chunk_overlap if req.chunk_overlap is not None else config.chunk_overlap
+    if new_overlap >= new_size:
+        raise HTTPException(status_code=400, detail="chunk_overlap must be strictly less than chunk_size")
+
+    reindex_required = False
+    if req.chunk_size is not None and req.chunk_size != config.chunk_size:
+        reindex_required = True
+    if req.chunk_overlap is not None and req.chunk_overlap != config.chunk_overlap:
+        reindex_required = True
+    if req.max_file_size_bytes is not None and req.max_file_size_bytes != config.max_file_size_bytes:
+        reindex_required = True
+    if req.included_directories is not None and req.included_directories != config.included_directories:
+        reindex_required = True
+    if req.excluded_directories is not None and req.excluded_directories != config.excluded_directories:
+        reindex_required = True
+    if req.index_structured_data is not None and req.index_structured_data != getattr(config, "index_structured_data", True):
+        reindex_required = True
+
     if req.included_directories is not None:
         config.included_directories = req.included_directories
     if req.excluded_directories is not None:
@@ -213,10 +235,24 @@ def update_config(req: ConfigUpdateRequest):
         config.chunk_size = req.chunk_size
     if req.chunk_overlap is not None:
         config.chunk_overlap = req.chunk_overlap
-    if req.enable_watchdog is not None:
+    if req.index_structured_data is not None:
+        config.index_structured_data = req.index_structured_data
+
+    # Watchdog toggle
+    if req.enable_watchdog is not None and req.enable_watchdog != config.enable_watchdog:
         config.enable_watchdog = req.enable_watchdog
+        try:
+            from backend.indexing.monitor import get_watcher
+            watcher = get_watcher()
+            if config.enable_watchdog and not watcher.running:
+                watcher.start()
+            elif not config.enable_watchdog and watcher.running:
+                watcher.stop()
+        except Exception as e:
+            logger.warning(f"Could not update watchdog state: {e}")
+
     config.save()
-    return {"success": True, "config": get_config()}
+    return {"success": True, "reindex_required": reindex_required, "config": get_config()}
 
 
 # Mount Frontend Static Files if built

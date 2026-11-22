@@ -11,17 +11,43 @@ from backend.extraction.models import ContentUnit, ExtractionResult
 logger = logging.getLogger(__name__)
 
 
+def is_binary_content(raw_bytes: bytes) -> bool:
+    """Detect if binary bytes are present."""
+    if not raw_bytes:
+        return False
+    if b"\x00" in raw_bytes[:8192]:
+        return True
+    text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7F})
+    sample = raw_bytes[:4096]
+    non_text = sample.translate(None, text_chars)
+    return (len(non_text) / max(len(sample), 1)) > 0.30
+
+
 def read_text_file_safe(path: Path) -> str:
-    """Read a text file trying multiple common encodings."""
+    """Read a text file safely; rejects binary content."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(8192)
+            if is_binary_content(header):
+                return ""
+    except Exception:
+        return ""
+
     encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]
     for enc in encodings:
         try:
-            with open(path, "r", encoding=enc, errors="replace") as f:
+            with open(path, "r", encoding=enc) as f:
                 return f.read()
-        except Exception:
+        except UnicodeDecodeError:
             continue
-    with open(path, "rb") as f:
-        return f.read().decode("utf-8", errors="ignore")
+        except Exception:
+            break
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except Exception:
+        return ""
 
 
 def extract_pdf(path: Path) -> List[ContentUnit]:
@@ -349,6 +375,51 @@ def extract_odf(path: Path, extension: str) -> List[ContentUnit]:
     
     unit_type = "slide" if extension == ".odp" else ("sheet" if extension == ".ods" else "section")
     return [ContentUnit(unit_type=unit_type, unit_number=1, text=full_text)]
+
+
+def extract_doc(path: Path) -> List[ContentUnit]:
+    """Extract legacy Word .doc files via LibreOffice soffice headless conversion if installed."""
+    import shutil
+    import subprocess
+    import tempfile
+    soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice_bin:
+        logger.info(f"soffice not found in PATH; cannot convert legacy doc: {path}")
+        return []
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        try:
+            subprocess.run(
+                [soffice_bin, "--headless", "--convert-to", "docx", str(path), "--outdir", tmp_dir],
+                check=True,
+                timeout=30,
+                capture_output=True
+            )
+            converted = Path(tmp_dir) / f"{path.stem}.docx"
+            if converted.exists():
+                return extract_docx(converted)
+        except Exception as e:
+            logger.warning(f"LibreOffice conversion failed for {path}: {e}")
+    return []
+
+
+def extract_image_ocr(path: Path) -> List[ContentUnit]:
+    """Extract text from an image using OCR if pytesseract is available."""
+    try:
+        import pytesseract
+        from PIL import Image
+        with Image.open(str(path)) as img:
+            text = pytesseract.image_to_string(img).strip()
+            if text:
+                return [ContentUnit(
+                    unit_type="image",
+                    unit_number=1,
+                    text=text,
+                    metadata={"ocr": True, "dimensions": f"{img.width}x{img.height}"}
+                )]
+    except Exception:
+        pass
+    return []
 
 
 def extract_image_metadata(path: Path) -> List[ContentUnit]:

@@ -17,7 +17,9 @@ from backend.extraction.extractors import (
     extract_rtf,
     extract_odf,
     read_text_file_safe,
-    extract_image_metadata
+    extract_image_metadata,
+    extract_doc,
+    extract_image_ocr
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,16 @@ def extract_file_content(file_path: str, category: Optional[str] = None) -> Extr
         elif extension == ".docx":
             result.content_units = extract_docx(path)
             result.success = True
+
+        elif extension == ".doc":
+            doc_units = extract_doc(path)
+            if doc_units:
+                result.content_units = doc_units
+                result.success = True
+            else:
+                result.content_units = []
+                result.success = False
+                result.error_message = "Legacy .doc format requires LibreOffice/soffice for conversion or upgrade to .docx"
 
         elif extension == ".pptx":
             result.content_units = extract_pptx(path)
@@ -101,18 +113,25 @@ def extract_file_content(file_path: str, category: Optional[str] = None) -> Extr
             result.success = True
 
         elif extension in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"]:
-            result.content_units = extract_image_metadata(path)
-            result.has_visual_content = True
-            result.success = True
+            ocr_units = extract_image_ocr(path)
+            if ocr_units:
+                result.content_units = ocr_units
+                result.has_visual_content = True
+                result.success = True
+            else:
+                result.content_units = []
+                result.has_visual_content = True
+                result.success = False
+                result.error_message = "No text content detected via OCR."
 
         else:
             # Fallback for plain text readable
             text = read_text_file_safe(path)
-            if text:
+            if text and text.strip():
                 result.content_units = [ContentUnit(unit_type="raw", unit_number=1, text=text[:10000].strip())]
                 result.success = True
             else:
-                result.error_message = f"Unsupported file extension: {extension}"
+                result.error_message = f"Unsupported or binary file extension: {extension}"
 
     except Exception as e:
         logger.warning(f"Error extracting content from {file_path}: {e}")
