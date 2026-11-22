@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Play, CheckCircle2, AlertTriangle, Layers, FileCode, Clock, HardDrive } from 'lucide-react';
+import { RefreshCw, Play, CheckCircle2, AlertTriangle, Layers, FileCode, Clock, HardDrive, XCircle } from 'lucide-react';
 
 export default function IndexingDashboard() {
   const [stats, setStats] = useState(null);
@@ -47,6 +47,16 @@ export default function IndexingDashboard() {
       .finally(() => setLoading(false));
   };
 
+  const handleCancel = () => {
+    fetch('/api/index/cancel', { method: 'POST' })
+      .then((r) => r.json())
+      .then((d) => {
+        setMsg(d.message);
+        fetchStatus();
+      })
+      .catch(console.error);
+  };
+
   const isIndexing = status?.status === 'indexing' || status?.status === 'scanning';
 
   return (
@@ -73,14 +83,24 @@ export default function IndexingDashboard() {
             <span>Rescan All</span>
           </button>
 
-          <button
-            onClick={handleStartIndexing}
-            disabled={isIndexing || loading}
-            className="flex items-center space-x-2 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 disabled:opacity-50 rounded-xl shadow-lg shadow-sky-500/20 transition"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{isIndexing ? 'Indexing...' : 'Start Indexing'}</span>
-          </button>
+          {isIndexing ? (
+            <button
+              onClick={handleCancel}
+              className="flex items-center space-x-2 px-4 py-2 text-xs font-semibold text-rose-200 bg-rose-600/80 hover:bg-rose-500 rounded-xl shadow-lg shadow-rose-500/20 transition"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>Cancel Indexing</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleStartIndexing}
+              disabled={loading}
+              className="flex items-center space-x-2 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 disabled:opacity-50 rounded-xl shadow-lg shadow-sky-500/20 transition"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Start Indexing</span>
+            </button>
+          )}
         </div>
       </div>
 

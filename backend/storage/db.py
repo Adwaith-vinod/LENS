@@ -3,7 +3,7 @@ import json
 import sqlite3
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from contextlib import contextmanager
 
@@ -29,6 +29,8 @@ class DatabaseManager:
         conn = sqlite3.connect(str(self.db_path), timeout=20.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 20000")
         try:
             yield conn
         finally:
@@ -136,6 +138,18 @@ class DatabaseManager:
             conn.commit()
             return row["id"]
 
+    def prune_chunks_for_file(self, file_id: int) -> List[int]:
+        """
+        Delete old chunks for file_id and return their embedding_ids so vector store can prune them.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT embedding_id FROM chunks WHERE file_id = ? AND embedding_id IS NOT NULL", (file_id,))
+            old_ids = [r["embedding_id"] for r in cursor.fetchall()]
+            cursor.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+            conn.commit()
+            return old_ids
+
     def insert_chunks(self, chunks: List[DocumentChunk], file_id: int) -> List[int]:
         """
         Delete old chunks for file_id and insert new chunks.
@@ -167,6 +181,35 @@ class DatabaseManager:
             conn.commit()
 
         return chunk_ids
+
+    def record_indexing_run_start(self, total_files: int = 0) -> int:
+        now = datetime.now().astimezone().isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT INTO indexing_runs (started_at, total_files, status, message)
+            VALUES (?, ?, 'running', 'Indexing started')
+            """, (now, total_files))
+            run_id = cursor.lastrowid
+            conn.commit()
+            return run_id
+
+    def record_indexing_run_finish(self, run_id: int, indexed: int, failed: int, status: str, message: str):
+        now = datetime.now().astimezone().isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            UPDATE indexing_runs
+            SET finished_at = ?, indexed_files = ?, failed_files = ?, status = ?, message = ?
+            WHERE id = ?
+            """, (now, indexed, failed, status, message, run_id))
+            conn.commit()
+
+    def get_chunks_for_file(self, file_id: int) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM chunks WHERE file_id = ? ORDER BY unit_number, chunk_index", (file_id,))
+            return [dict(r) for r in cursor.fetchall()]
 
     def get_file_by_id(self, file_id: int) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:

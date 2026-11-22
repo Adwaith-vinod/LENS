@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   Sparkles,
@@ -53,6 +53,7 @@ export default function App() {
   const [copiedPath, setCopiedPath] = useState(null);
   const [notification, setNotification] = useState(null);
   const [systemStats, setSystemStats] = useState(null);
+  const searchReqIdRef = useRef(0);
 
   // Poll stats for status badge
   useEffect(() => {
@@ -67,16 +68,18 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSearch = (overrideQuery) => {
+  const handleSearch = (overrideQuery, overrideCategory) => {
     const q = overrideQuery !== undefined ? overrideQuery : query;
+    const cat = overrideCategory !== undefined ? overrideCategory : selectedCategory;
     if (!q.trim()) return;
 
     setLoading(true);
     setHasSearched(true);
+    const reqId = ++searchReqIdRef.current;
 
     const payload = {
       query: q.trim(),
-      category: selectedCategory === 'all' ? null : selectedCategory,
+      category: cat === 'all' ? null : cat,
       top_k: 25,
       min_score: 0.15
     };
@@ -91,22 +94,36 @@ export default function App() {
         return r.json();
       })
       .then((data) => {
-        setResults(data.results || []);
-        setTotalResults(data.total_results || 0);
-        setDuration(data.duration_ms || 0);
+        if (reqId === searchReqIdRef.current) {
+          setResults(data.results || []);
+          setTotalResults(data.total_results || 0);
+          setDuration(data.duration_ms || 0);
+        }
       })
       .catch((err) => {
-        showNotification(err.message, true);
+        if (reqId === searchReqIdRef.current) {
+          showNotification(err.message, true);
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (reqId === searchReqIdRef.current) {
+          setLoading(false);
+        }
+      });
   };
 
   const handleOpenFile = (filePathOrId) => {
-    // If it's an object with file_id
-    const id = typeof filePathOrId === 'number' ? filePathOrId : null;
-    const url = id ? `/api/files/${id}/open` : `/api/files/${encodeURIComponent(filePathOrId)}/open`;
+    const isId = typeof filePathOrId === 'number';
+    const url = isId ? `/api/files/${filePathOrId}/open` : '/api/files/open';
+    const options = isId
+      ? { method: 'POST' }
+      : {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePathOrId })
+        };
 
-    fetch(url, { method: 'POST' })
+    fetch(url, options)
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {
@@ -119,12 +136,17 @@ export default function App() {
   };
 
   const handleOpenFolder = (filePathOrId) => {
-    const id = typeof filePathOrId === 'number' ? filePathOrId : null;
-    const url = id
-      ? `/api/files/${id}/open-location`
-      : `/api/files/${encodeURIComponent(filePathOrId)}/open-location`;
+    const isId = typeof filePathOrId === 'number';
+    const url = isId ? `/api/files/${filePathOrId}/open-location` : '/api/files/open-location';
+    const options = isId
+      ? { method: 'POST' }
+      : {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePathOrId })
+        };
 
-    fetch(url, { method: 'POST' })
+    fetch(url, options)
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {
@@ -304,7 +326,7 @@ export default function App() {
                       onClick={() => {
                         setSelectedCategory(cat.id);
                         if (query.trim()) {
-                          setTimeout(() => handleSearch(), 50);
+                          handleSearch(query, cat.id);
                         }
                       }}
                       className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition whitespace-nowrap ${

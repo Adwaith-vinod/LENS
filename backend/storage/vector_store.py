@@ -38,7 +38,7 @@ class PersistentVectorStore:
         self.index = faiss.IndexIDMap2(flat_index)
         logger.info(f"Created new empty FAISS IndexIDMap2(IndexFlatIP({self.dimension}))")
 
-    def add_vectors(self, vectors: np.ndarray, ids: List[int]):
+    def add_vectors(self, vectors: np.ndarray, ids: List[int], save: bool = True):
         """
         Add normalized vectors with specific integer IDs to the index.
         """
@@ -55,7 +55,8 @@ class PersistentVectorStore:
             pass
 
         self.index.add_with_ids(vectors, ids_arr)
-        self.save()
+        if save:
+            self.save()
 
     def remove_vectors(self, ids: List[int]):
         """Remove specific vector IDs from the index."""

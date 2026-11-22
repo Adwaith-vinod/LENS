@@ -57,6 +57,11 @@ class ConfigUpdateRequest(BaseModel):
     enable_watchdog: Optional[bool] = None
 
 
+class OpenFileRequest(BaseModel):
+    file_id: Optional[int] = None
+    file_path: Optional[str] = None
+
+
 @app.get("/api/health")
 def health_check():
     stats = get_db().get_statistics()
@@ -90,6 +95,12 @@ def start_indexing(req: IndexStartRequest = IndexStartRequest()):
 def rescan_files():
     res = get_indexer().start_indexing(background=True)
     return res
+
+
+@app.post("/api/index/cancel")
+def cancel_indexing():
+    get_indexer().cancel_indexing()
+    return {"status": "cancelling", "message": "Indexing cancellation requested."}
 
 
 @app.get("/api/index/status")
@@ -138,6 +149,28 @@ def get_file_preview(file_id: int):
     if not preview_data.get("success"):
         raise HTTPException(status_code=404, detail=preview_data.get("error", "Not found"))
     return preview_data
+
+
+@app.post("/api/files/open")
+def open_file_by_body(req: OpenFileRequest):
+    target = req.file_id if req.file_id is not None else req.file_path
+    if not target:
+        raise HTTPException(status_code=400, detail="file_id or file_path is required")
+    result = get_file_service().open_file(target)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+@app.post("/api/files/open-location")
+def open_location_by_body(req: OpenFileRequest):
+    target = req.file_id if req.file_id is not None else req.file_path
+    if not target:
+        raise HTTPException(status_code=400, detail="file_id or file_path is required")
+    result = get_file_service().open_file_location(target)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
 
 
 @app.post("/api/files/{file_id}/open")
