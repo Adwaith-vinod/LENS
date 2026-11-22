@@ -252,3 +252,8 @@ def get_search_engine() -> SearchEngine:
     if _search_engine_instance is None:
         _search_engine_instance = SearchEngine()
     return _search_engine_instance
+
+
+def reset_search_engine():
+    global _search_engine_instance
+    _search_engine_instance = None

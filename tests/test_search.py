@@ -50,10 +50,16 @@ class TestSemanticSearch(unittest.TestCase):
         wb.save(str(xlsx_path))
 
         # Index the directory
+        cls.db = DatabaseManager(cls.root / "lens_test.db")
+        cls.vector_store = PersistentVectorStore(cls.root / "lens_test.index", dimension=384)
         cls.indexer = LensIndexer()
-        # Override storage locations or run pipeline on this dir
+        cls.indexer.db = cls.db
+        cls.indexer.vector_store = cls.vector_store
         cls.indexer._run_indexing_pipeline([str(cls.docs_dir)])
+
         cls.search_engine = SearchEngine()
+        cls.search_engine.db = cls.db
+        cls.search_engine.vector_store = cls.vector_store
 
     @classmethod
     def tearDownClass(cls):

@@ -5,7 +5,7 @@ from typing import List, Tuple, Optional
 import numpy as np
 import faiss
 
-from backend.config.settings import TEXT_INDEX_PATH, EMBEDDING_DIMENSION
+from backend.config.settings import TEXT_INDEX_PATH, EMBEDDING_DIMENSION, get_text_index_path
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class PersistentVectorStore:
     """
 
     def __init__(self, index_path: Optional[Path] = None, dimension: int = EMBEDDING_DIMENSION):
-        self.index_path = index_path or TEXT_INDEX_PATH
+        self.index_path = index_path or get_text_index_path()
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.dimension = dimension
         self.index: Optional[faiss.IndexIDMap2] = None
@@ -112,3 +112,8 @@ def get_vector_store() -> PersistentVectorStore:
     if _vector_store_instance is None:
         _vector_store_instance = PersistentVectorStore()
     return _vector_store_instance
+
+
+def reset_vector_store():
+    global _vector_store_instance
+    _vector_store_instance = None

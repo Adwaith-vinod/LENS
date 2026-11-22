@@ -8,15 +8,46 @@ logger = logging.getLogger(__name__)
 
 # Base Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = DATA_DIR / "lens.db"
-TEXT_INDEX_PATH = DATA_DIR / "lens_text.index"
-VISUAL_INDEX_PATH = DATA_DIR / "lens_visual.index"
-CONFIG_FILE = DATA_DIR / "config.json"
-PREVIEWS_DIR = DATA_DIR / "previews"
-PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_data_dir() -> Path:
+    env_dir = os.environ.get("LENS_DATA_DIR")
+    if env_dir:
+        d = Path(env_dir).resolve()
+    else:
+        d = PROJECT_ROOT / "data"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_db_path() -> Path:
+    return get_data_dir() / "lens.db"
+
+
+def get_text_index_path() -> Path:
+    return get_data_dir() / "lens_text.index"
+
+
+def get_visual_index_path() -> Path:
+    return get_data_dir() / "lens_visual.index"
+
+
+def get_config_file() -> Path:
+    return get_data_dir() / "config.json"
+
+
+def get_previews_dir() -> Path:
+    p = get_data_dir() / "previews"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+DATA_DIR = get_data_dir()
+DB_PATH = get_db_path()
+TEXT_INDEX_PATH = get_text_index_path()
+VISUAL_INDEX_PATH = get_visual_index_path()
+CONFIG_FILE = get_config_file()
+PREVIEWS_DIR = get_previews_dir()
 
 # Performance & Chunking
 DEFAULT_CHUNK_SIZE = 500
@@ -55,7 +86,7 @@ def get_default_scan_directories() -> List[str]:
 
 class LensConfig:
     def __init__(self):
-        self.config_path = CONFIG_FILE
+        self.config_path = get_config_file()
         self.included_directories: List[str] = get_default_scan_directories()
         self.excluded_directories: List[str] = [
             "node_modules", ".git", ".venv", "venv", "__pycache__",
@@ -103,4 +134,22 @@ class LensConfig:
             logger.error(f"Failed to save config file: {e}")
 
 
-config = LensConfig()
+_config_instances = {}
+
+
+def get_config() -> LensConfig:
+    cfg_file = get_config_file()
+    if cfg_file not in _config_instances:
+        _config_instances[cfg_file] = LensConfig()
+    return _config_instances[cfg_file]
+
+
+class ConfigProxy:
+    def __getattr__(self, name):
+        return getattr(get_config(), name)
+
+    def __setattr__(self, name, value):
+        setattr(get_config(), name, value)
+
+
+config = ConfigProxy()

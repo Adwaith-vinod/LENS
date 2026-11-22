@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from contextlib import contextmanager
 
-from backend.config.settings import DB_PATH
+from backend.config.settings import DB_PATH, get_db_path
 from backend.processing.chunker import DocumentChunk
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class DatabaseManager:
     """
 
     def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or DB_PATH
+        self.db_path = db_path or get_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_db()
 
@@ -261,3 +261,8 @@ def get_db() -> DatabaseManager:
     if _db_instance is None:
         _db_instance = DatabaseManager()
     return _db_instance
+
+
+def reset_db():
+    global _db_instance
+    _db_instance = None

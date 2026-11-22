@@ -251,3 +251,8 @@ def get_indexer() -> LensIndexer:
     if _indexer_instance is None:
         _indexer_instance = LensIndexer()
     return _indexer_instance
+
+
+def reset_indexer():
+    global _indexer_instance
+    _indexer_instance = None

@@ -59,7 +59,7 @@ class ConfigUpdateRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
-    stats = db.get_statistics()
+    stats = get_db().get_statistics()
     return {
         "status": "online",
         "app": "LENS",
@@ -71,7 +71,7 @@ def health_check():
 
 @app.get("/api/stats")
 def get_stats():
-    return db.get_statistics()
+    return get_db().get_statistics()
 
 
 @app.get("/api/system/drives")
@@ -82,25 +82,25 @@ def get_system_drives():
 
 @app.post("/api/index/start")
 def start_indexing(req: IndexStartRequest = IndexStartRequest()):
-    res = indexer.start_indexing(custom_directories=req.directories, background=True)
+    res = get_indexer().start_indexing(custom_directories=req.directories, background=True)
     return res
 
 
 @app.post("/api/index/rescan")
 def rescan_files():
-    res = indexer.start_indexing(background=True)
+    res = get_indexer().start_indexing(background=True)
     return res
 
 
 @app.get("/api/index/status")
 def get_index_status():
-    return indexer.get_status()
+    return get_indexer().get_status()
 
 
 @app.post("/api/search")
 def search_files(req: SearchRequest):
     try:
-        response = search_engine.search(
+        response = get_search_engine().search(
             query=req.query,
             category=req.category,
             top_k=req.top_k,
@@ -115,7 +115,7 @@ def search_files(req: SearchRequest):
 @app.post("/api/search/diagnostics")
 def search_diagnostics(req: SearchRequest):
     try:
-        return search_engine.search_diagnostics(
+        return get_search_engine().search_diagnostics(
             query=req.query,
             category=req.category
         )
@@ -126,7 +126,7 @@ def search_diagnostics(req: SearchRequest):
 
 @app.get("/api/files/{file_id}")
 def get_file_details(file_id: int):
-    rec = db.get_file_by_id(file_id)
+    rec = get_db().get_file_by_id(file_id)
     if not rec:
         raise HTTPException(status_code=404, detail="File not found")
     return rec
@@ -134,7 +134,7 @@ def get_file_details(file_id: int):
 
 @app.get("/api/files/{file_id}/preview")
 def get_file_preview(file_id: int):
-    preview_data = file_service.get_file_preview(file_id)
+    preview_data = get_file_service().get_file_preview(file_id)
     if not preview_data.get("success"):
         raise HTTPException(status_code=404, detail=preview_data.get("error", "Not found"))
     return preview_data
@@ -142,7 +142,7 @@ def get_file_preview(file_id: int):
 
 @app.post("/api/files/{file_id}/open")
 def open_file_endpoint(file_id: int):
-    result = file_service.open_file(file_id)
+    result = get_file_service().open_file(file_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
@@ -150,7 +150,7 @@ def open_file_endpoint(file_id: int):
 
 @app.post("/api/files/{file_id}/open-location")
 def open_location_endpoint(file_id: int):
-    result = file_service.open_file_location(file_id)
+    result = get_file_service().open_file_location(file_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
