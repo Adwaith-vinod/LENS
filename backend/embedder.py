@@ -1,10 +1,11 @@
-from sentence_transformers import SentenceTransformer
+"""
+Backward-compatible wrapper for embedder.
+"""
+from backend.embeddings.engine import get_embedding_engine
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+engine = get_embedding_engine()
+model = engine.text_model
 
-text = "Python is used for machine learning"
 
-embedding = model.encode(text)
-
-print(embedding)
-print("Number of values:", len(embedding))
+def get_embedding(text):
+    return engine.encode_query(text)[0]

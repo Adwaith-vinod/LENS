@@ -1,14 +1,24 @@
-from pathlib import Path
+"""
+Main entry point for the LENS Backend Server.
+"""
+import uvicorn
+import os
+import sys
 
-path = Path("C:/Users/adwai/OneDrive/Documents")
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-supported_extension = {".pdf",".txt",".docx"}
-for item in path.rglob("*"):
-    if item.is_file():
-         if item.suffix.lower() in supported_extension:
-            print("Name:", item.name)
-            print("Path:", item)
-            print("Extension:", item.suffix)
-            print("Size:", item.stat().st_size, "bytes")
-            print("Parent:", item.parent)
-            print("-" * 40)
+
+def start_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = False):
+    print("=" * 60)
+    print("  LENS: AI-Powered Intelligent Local File Discovery")
+    print(f"  Server starting at http://{host}:{port}")
+    print(f"  API Docs available at http://{host}:{port}/docs")
+    print("=" * 60)
+    uvicorn.run("backend.api.app:app", host=host, port=port, reload=reload)
+
+
+if __name__ == "__main__":
+    start_server()
