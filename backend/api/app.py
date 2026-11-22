@@ -112,6 +112,18 @@ def search_files(req: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/search/diagnostics")
+def search_diagnostics(req: SearchRequest):
+    try:
+        return search_engine.search_diagnostics(
+            query=req.query,
+            category=req.category
+        )
+    except Exception as e:
+        logger.error(f"Diagnostics failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/files/{file_id}")
 def get_file_details(file_id: int):
     rec = db.get_file_by_id(file_id)

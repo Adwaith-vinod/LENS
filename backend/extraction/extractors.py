@@ -147,6 +147,56 @@ def extract_pptx(path: Path) -> List[ContentUnit]:
     return units
 
 
+def extract_ppt(path: Path) -> List[ContentUnit]:
+    """Extract legacy PPT files using python-pptx or binary string stream extraction."""
+    try:
+        from pptx import Presentation
+        prs = Presentation(str(path))
+        return extract_pptx(path)
+    except Exception:
+        pass
+
+    import re
+    units = []
+    try:
+        with open(path, "rb") as f:
+            content = f.read()
+        ascii_strings = re.findall(b"[\x20-\x7E]{4,}", content)
+        utf16_strings = re.findall(b"(?:[\x20-\x7E]\x00){4,}", content)
+
+        extracted = []
+        for s in ascii_strings:
+            try:
+                decoded = s.decode("latin-1", errors="ignore").strip()
+                if len(decoded) > 3 and not decoded.startswith(("<?xml", "urn:", "http")):
+                    extracted.append(decoded)
+            except Exception:
+                continue
+        for s in utf16_strings:
+            try:
+                decoded = s.decode("utf-16le", errors="ignore").strip()
+                if len(decoded) > 3:
+                    extracted.append(decoded)
+            except Exception:
+                continue
+
+        chunk_size = 15
+        slide_idx = 1
+        for i in range(0, len(extracted), chunk_size):
+            block = extracted[i:i + chunk_size]
+            units.append(ContentUnit(
+                unit_type="slide",
+                unit_number=slide_idx,
+                text="\n".join(block),
+                metadata={"slide_number": slide_idx}
+            ))
+            slide_idx += 1
+    except Exception as e:
+        logger.warning(f"Failed to extract text from PPT {path}: {e}")
+
+    return units or [ContentUnit(unit_type="slide", unit_number=1, text="")]
+
+
 def extract_xlsx(path: Path) -> List[ContentUnit]:
     """Extract XLSX workbook sheet by sheet using openpyxl."""
     import openpyxl

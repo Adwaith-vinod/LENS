@@ -1,4 +1,5 @@
 import time
+import re
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -9,11 +10,59 @@ from backend.search.models import SearchResultItem, MatchingSnippet, SearchRespo
 
 logger = logging.getLogger(__name__)
 
+# Intent keyword registry mapping to supported categories
+INTENT_KEYWORDS = {
+    "presentations": [
+        "presentation", "presentations", "ppt", "pptx", "slide", "slides",
+        "powerpoint", "slide deck", "deck"
+    ],
+    "spreadsheets": [
+        "spreadsheet", "spreadsheets", "excel", "sheet", "sheets", "csv",
+        "workbook", "workbooks", "xlsx", "xls"
+    ],
+    "documents": [
+        "document", "documents", "doc", "docx", "pdf", "report", "paper",
+        "article", "notes", "txt", "text file"
+    ],
+    "images": [
+        "image", "images", "photo", "photos", "picture", "pictures",
+        "png", "jpg", "jpeg", "diagram"
+    ]
+}
+
+
+def detect_query_intent(query: str) -> Optional[str]:
+    """
+    Detect explicit file-type or category intent from the natural language query.
+    For example: 'find me the presentation file about docker and kubernetes' -> 'presentations'.
+    """
+    lower_query = f" {query.lower()} "
+    for category, keywords in INTENT_KEYWORDS.items():
+        for kw in keywords:
+            # Match whole words or phrases
+            pattern = r'\b' + re.escape(kw) + r'\b'
+            if re.search(pattern, lower_query):
+                return category
+    return None
+
+
+def extract_keywords(query: str) -> List[str]:
+    """Extract significant keywords from a search query, stripping conversational filler."""
+    stopwords = {
+        "find", "me", "the", "a", "an", "about", "file", "files", "document",
+        "presentation", "spreadsheet", "image", "containing", "where", "i",
+        "wrote", "discussing", "details", "information", "with", "for", "in",
+        "on", "at", "to", "and", "or", "of", "is", "are", "show", "get"
+    }
+    words = re.findall(r'[a-zA-Z0-9_\-\.]+', query.lower())
+    return [w for w in words if w not in stopwords and len(w) >= 3]
+
 
 class SearchEngine:
     """
     Unified semantic search engine for LENS.
-    Performs vector similarity search across indexed document chunks and ranks matching files.
+    Performs vector similarity search across indexed document chunks and ranks matching files
+    using content relevance, multi-chunk support, filename signals, and user intent.
     """
 
     def __init__(self):
@@ -33,11 +82,17 @@ class SearchEngine:
         if not query:
             return SearchResponse(query="", total_results=0, results=[], duration_ms=0.0)
 
+        # Detect user intent (e.g. asking for a presentation, spreadsheet, etc.)
+        detected_intent = detect_query_intent(query)
+        effective_category = category or (detected_intent if category else None)
+        query_keywords = extract_keywords(query)
+
         # Generate normalized query embedding
         query_vector = self.embedding_engine.encode_query(query)
 
-        # Search FAISS vector store
-        scores, ids = self.vector_store.search(query_vector, top_k=top_k * 3)
+        # Retrieve a broad set of candidate chunks from FAISS to prevent any single file from crowding others
+        candidate_k = max(top_k * 8, 120)
+        scores, ids = self.vector_store.search(query_vector, top_k=candidate_k)
         if len(scores) == 0 or len(scores[0]) == 0:
             duration = (time.perf_counter() - start_time) * 1000
             return SearchResponse(query=query, total_results=0, results=[], duration_ms=duration)
@@ -55,11 +110,11 @@ class SearchEngine:
             emb_id = chunk["embedding_id"]
             c_score = score_map.get(emb_id, 0.0)
 
-            # Category filter if specified
+            # Strict category filter if user clicked a specific category tab
             if category and chunk["category"].lower() != category.lower():
                 continue
 
-            # Min score threshold
+            # Minimum score threshold
             if c_score < min_score:
                 continue
 
@@ -92,10 +147,23 @@ class SearchEngine:
                 continue
 
             best_chunk = chunks[0]
-            # Primary score is best chunk's cosine similarity
-            # Multi-chunk boost: slightly reward files with multiple relevant sections
-            boost = min(len(chunks) - 1, 3) * 0.02
-            final_score = min(best_chunk["score"] + boost, 1.0)
+            base_score = best_chunk["score"]
+
+            # 1. Multi-chunk contextual boost (up to +0.06)
+            multi_chunk_boost = min(len(chunks) - 1, 3) * 0.02
+
+            # 2. Filename keyword match bonus (up to +0.08)
+            f_name_lower = f_data["file_name"].lower()
+            keyword_matches = sum(1 for kw in query_keywords if kw in f_name_lower)
+            filename_boost = min(keyword_matches * 0.04, 0.08)
+
+            # 3. Intent category alignment boost
+            # If user explicitly asked for a presentation and this file is a presentation with solid content relevance
+            intent_boost = 0.0
+            if detected_intent and f_data["category"].lower() == detected_intent.lower() and base_score >= 0.25:
+                intent_boost = 0.12
+
+            final_score = min(base_score + multi_chunk_boost + filename_boost + intent_boost, 1.0)
 
             matching_snippets = [
                 MatchingSnippet(
@@ -135,6 +203,45 @@ class SearchEngine:
             results=results,
             duration_ms=round(duration, 2)
         )
+
+    def search_diagnostics(self, query: str, category: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Step 9 Diagnostic Mode: Provides full retrieval pipeline diagnostics for debugging.
+        """
+        start_time = time.perf_counter()
+        detected_intent = detect_query_intent(query)
+        keywords = extract_keywords(query)
+        stats = self.db.get_statistics()
+
+        query_vector = self.embedding_engine.encode_query(query)
+        scores, ids = self.vector_store.search(query_vector, top_k=150)
+        raw_candidates_count = len(scores[0]) if len(scores) > 0 else 0
+
+        search_res = self.search(query=query, category=category, top_k=20)
+        duration = (time.perf_counter() - start_time) * 1000
+
+        return {
+            "query": query,
+            "detected_intent": detected_intent,
+            "extracted_keywords": keywords,
+            "total_indexed_files": stats["total_files"],
+            "total_indexed_chunks": stats["total_chunks"],
+            "files_by_category": stats.get("categories", {}),
+            "faiss_candidates_retrieved": raw_candidates_count,
+            "final_results_count": search_res.total_results,
+            "top_matching_files": [
+                {
+                    "rank": idx + 1,
+                    "file_name": r.file_name,
+                    "category": r.category,
+                    "relevance_score": r.relevance_score,
+                    "primary_source": r.primary_source,
+                    "file_path": r.file_path
+                }
+                for idx, r in enumerate(search_res.results[:10])
+            ],
+            "duration_ms": round(duration, 2)
+        }
 
 
 _search_engine_instance = None

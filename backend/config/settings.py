@@ -29,15 +29,25 @@ MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 def get_default_scan_directories() -> List[str]:
     """
     Returns prioritized user directories on Windows (e.g., Documents, Desktop, Downloads),
-    falling back to User Home or Project Root.
+    accounting for Microsoft OneDrive redirection on Windows 10/11.
     """
     user_home = Path.home()
     candidates = [
-        user_home / "Documents",
+        user_home / "OneDrive" / "Desktop",
         user_home / "Desktop",
+        user_home / "OneDrive" / "Documents",
+        user_home / "Documents",
         user_home / "Downloads"
     ]
-    existing = [str(p.resolve()) for p in candidates if p.exists() and p.is_dir()]
+    seen = set()
+    existing = []
+    for p in candidates:
+        if p.exists() and p.is_dir():
+            norm = os.path.normcase(os.path.normpath(str(p.resolve())))
+            if norm not in seen:
+                seen.add(norm)
+                existing.append(str(p.resolve()))
+
     if not existing:
         existing = [str(user_home.resolve())]
     return existing
@@ -64,6 +74,11 @@ class LensConfig:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.included_directories = data.get("included_directories", self.included_directories)
+                    # Automatically ensure active user directories (e.g., Desktop/OneDrive) are included
+                    existing_norm = {os.path.normcase(os.path.normpath(d)) for d in self.included_directories}
+                    for default_dir in get_default_scan_directories():
+                        if os.path.normcase(os.path.normpath(default_dir)) not in existing_norm:
+                            self.included_directories.append(default_dir)
                     self.excluded_directories = data.get("excluded_directories", self.excluded_directories)
                     self.max_file_size_bytes = data.get("max_file_size_bytes", self.max_file_size_bytes)
                     self.chunk_size = data.get("chunk_size", self.chunk_size)

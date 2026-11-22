@@ -46,6 +46,13 @@ class TestAPI(unittest.TestCase):
         self.assertIn("results", data)
         self.assertIn("duration_ms", data)
 
+    def test_search_diagnostics_endpoint(self):
+        res = self.client.post("/api/search/diagnostics", json={"query": "find me the presentation about docker and kubernetes"})
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["detected_intent"], "presentations")
+        self.assertIn("top_matching_files", data)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ from backend.extraction.extractors import (
     extract_pdf,
     extract_docx,
     extract_pptx,
+    extract_ppt,
     extract_xlsx,
     extract_xls,
     extract_csv,
@@ -58,6 +59,11 @@ def extract_file_content(file_path: str, category: Optional[str] = None) -> Extr
 
         elif extension == ".pptx":
             result.content_units = extract_pptx(path)
+            result.has_visual_content = any(u.metadata.get("has_images") for u in result.content_units)
+            result.success = True
+
+        elif extension == ".ppt":
+            result.content_units = extract_ppt(path)
             result.has_visual_content = any(u.metadata.get("has_images") for u in result.content_units)
             result.success = True
 

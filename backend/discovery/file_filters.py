@@ -57,7 +57,14 @@ EXCLUDED_DIRECTORY_NAMES = {
     "cache",
     "caches",
     "temp",
-    "tmp"
+    "tmp",
+
+    "dataset",
+    "datasets",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".vscode"
 }
 
 
