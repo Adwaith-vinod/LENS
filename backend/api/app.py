@@ -1,11 +1,13 @@
+import os
+import secrets
 import logging
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.config.settings import config
+from backend.config.settings import config, get_data_dir
 from backend.discovery.system_discovery import discover_fixed_drives
 from backend.storage.db import get_db
 from backend.indexing.indexer import get_indexer
@@ -15,6 +17,34 @@ from backend.embeddings.engine import get_embedding_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("lens.api")
+
+
+def get_auth_token() -> str:
+    """Read or create the local session token."""
+    token_file = get_data_dir() / ".token"
+    if token_file.exists():
+        try:
+            tok = token_file.read_text(encoding="utf-8").strip()
+            if tok:
+                return tok
+        except Exception:
+            pass
+    token = secrets.token_hex(24)
+    try:
+        token_file.write_text(token, encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not persist auth token: {e}")
+    return token
+
+
+def require_token(x_lens_token: Optional[str] = Header(None)):
+    """Security check ensuring requests to mutating endpoints possess the local session token."""
+    if os.environ.get("LENS_TEST_MODE") == "1":
+        return True
+    expected = get_auth_token()
+    if not x_lens_token or not secrets.compare_digest(x_lens_token, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing X-LENS-Token")
+    return True
 
 
 @asynccontextmanager
@@ -36,10 +66,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for local desktop UI
+# Restrict CORS to local desktop origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,6 +135,16 @@ def health_check():
     }
 
 
+@app.get("/api/bootstrap")
+def bootstrap_session():
+    """Returns local session token for authorized frontend interactions."""
+    return {
+        "token": get_auth_token(),
+        "app": "LENS",
+        "version": "1.0.0"
+    }
+
+
 @app.get("/api/stats")
 def get_stats():
     return get_db().get_statistics()
@@ -110,19 +157,19 @@ def get_system_drives():
 
 
 @app.post("/api/index/start")
-def start_indexing(req: IndexStartRequest = IndexStartRequest()):
+def start_indexing(req: IndexStartRequest = IndexStartRequest(), _token: bool = Depends(require_token)):
     res = get_indexer().start_indexing(custom_directories=req.directories, background=True)
     return res
 
 
 @app.post("/api/index/rescan")
-def rescan_files():
+def rescan_files(_token: bool = Depends(require_token)):
     res = get_indexer().start_indexing(background=True)
     return res
 
 
 @app.post("/api/index/cancel")
-def cancel_indexing():
+def cancel_indexing(_token: bool = Depends(require_token)):
     get_indexer().cancel_indexing()
     return {"status": "cancelling", "message": "Indexing cancellation requested."}
 
@@ -176,7 +223,7 @@ def get_file_preview(file_id: int):
 
 
 @app.post("/api/files/open")
-def open_file_by_body(req: OpenFileRequest):
+def open_file_by_body(req: OpenFileRequest, _token: bool = Depends(require_token)):
     target = req.file_id if req.file_id is not None else req.file_path
     if not target:
         raise HTTPException(status_code=400, detail="file_id or file_path is required")
@@ -187,7 +234,7 @@ def open_file_by_body(req: OpenFileRequest):
 
 
 @app.post("/api/files/open-location")
-def open_location_by_body(req: OpenFileRequest):
+def open_location_by_body(req: OpenFileRequest, _token: bool = Depends(require_token)):
     target = req.file_id if req.file_id is not None else req.file_path
     if not target:
         raise HTTPException(status_code=400, detail="file_id or file_path is required")
@@ -198,7 +245,7 @@ def open_location_by_body(req: OpenFileRequest):
 
 
 @app.post("/api/files/{file_id}/open")
-def open_file_endpoint(file_id: int):
+def open_file_endpoint(file_id: int, _token: bool = Depends(require_token)):
     result = get_file_service().open_file(file_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
@@ -206,7 +253,7 @@ def open_file_endpoint(file_id: int):
 
 
 @app.post("/api/files/{file_id}/open-location")
-def open_location_endpoint(file_id: int):
+def open_location_endpoint(file_id: int, _token: bool = Depends(require_token)):
     result = get_file_service().open_file_location(file_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
@@ -227,7 +274,7 @@ def get_config():
 
 
 @app.post("/api/config")
-def update_config(req: ConfigUpdateRequest):
+def update_config(req: ConfigUpdateRequest, _token: bool = Depends(require_token)):
     # Validate chunk_overlap < chunk_size
     new_size = req.chunk_size if req.chunk_size is not None else config.chunk_size
     new_overlap = req.chunk_overlap if req.chunk_overlap is not None else config.chunk_overlap

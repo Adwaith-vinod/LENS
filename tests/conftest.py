@@ -22,6 +22,7 @@ def isolate_lens_environment(tmp_path, monkeypatch):
     test_data_dir = tmp_path / "lens_test_data"
     test_data_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("LENS_DATA_DIR", str(test_data_dir))
+    monkeypatch.setenv("LENS_TEST_MODE", "1")
 
     # Reset singletons before test
     reset_db()

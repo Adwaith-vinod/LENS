@@ -14,10 +14,30 @@ class FileService:
     def __init__(self):
         self.db = get_db()
 
+    def _is_path_allowed(self, path: Path) -> bool:
+        """Verify that the target path is an indexed file or within configured scan directories."""
+        # 1. Check if file is in SQLite database
+        if self.db.get_file_by_path(str(path)) or self.db.get_file_by_path(str(path.resolve())):
+            return True
+
+        # 2. Check if file is within configured included scan directories
+        from backend.config.settings import config
+        try:
+            resolved_path = path.resolve()
+            for inc_dir in config.included_directories:
+                inc_path = Path(inc_dir).resolve()
+                if resolved_path == inc_path or inc_path in resolved_path.parents:
+                    return True
+        except Exception:
+            pass
+
+        return False
+
     def open_file(self, file_path_or_id) -> Dict[str, Any]:
         """
         Open the original file using the operating system's default application.
         Never modifies, deletes, or moves the file.
+        Validates target is within allowed/indexed paths to prevent arbitrary execution.
         """
         path_str = self._resolve_path(file_path_or_id)
         if not path_str:
@@ -26,6 +46,9 @@ class FileService:
         path = Path(path_str)
         if not path.exists():
             return {"success": False, "error": f"File no longer exists at: {path_str}"}
+
+        if not self._is_path_allowed(path):
+            return {"success": False, "error": f"Access denied: file '{path.name}' is outside configured search paths."}
 
         try:
             if sys.platform == "win32":
@@ -42,6 +65,7 @@ class FileService:
     def open_file_location(self, file_path_or_id) -> Dict[str, Any]:
         """
         Open the folder containing the file and select/highlight the file.
+        Uses list-form subprocess arguments without shell string execution.
         """
         path_str = self._resolve_path(file_path_or_id)
         if not path_str:
@@ -51,10 +75,13 @@ class FileService:
         if not path.exists():
             return {"success": False, "error": f"File no longer exists at: {path_str}"}
 
+        if not self._is_path_allowed(path):
+            return {"success": False, "error": f"Access denied: file '{path.name}' is outside configured search paths."}
+
         try:
             if sys.platform == "win32":
-                # Select file in Windows Explorer
-                subprocess.Popen(f'explorer /select,"{path}"')
+                # Select file in Windows Explorer without shell injection
+                subprocess.Popen(["explorer.exe", f"/select,{path}"])
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", "-R", str(path)])
             else:
