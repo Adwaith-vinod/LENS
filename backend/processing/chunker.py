@@ -18,6 +18,12 @@ class DocumentChunk:
     source_info: str  # e.g., "Page 3", "Slide 2", "Sheet: Financials"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def embedding_text(self) -> str:
+        """Context-enriched text representation for dense embedding generation."""
+        prefix = f"{self.file_name} | {self.source_info} | " if self.source_info else f"{self.file_name} | "
+        return f"{prefix}{self.chunk_text}"
+
 
 def split_text_into_sentences(text: str) -> List[str]:
     """

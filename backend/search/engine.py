@@ -87,28 +87,60 @@ class SearchEngine:
         effective_category = category or (detected_intent if category else None)
         query_keywords = extract_keywords(query)
 
-        # Generate normalized query embedding
+        # 1. Retrieve Dense Candidates from FAISS (top 50)
         query_vector = self.embedding_engine.encode_query(query)
+        dense_scores_raw, dense_ids_raw = self.vector_store.search(query_vector, top_k=50)
 
-        # Retrieve a broad set of candidate chunks from FAISS to prevent any single file from crowding others
-        candidate_k = max(top_k * 8, 120)
-        scores, ids = self.vector_store.search(query_vector, top_k=candidate_k)
-        if len(scores) == 0 or len(scores[0]) == 0:
+        dense_ranks: Dict[int, int] = {}
+        dense_scores: Dict[int, float] = {}
+        if len(dense_scores_raw) > 0 and len(dense_scores_raw[0]) > 0:
+            for rank_idx, (score, chunk_id) in enumerate(zip(dense_scores_raw[0], dense_ids_raw[0]), start=1):
+                if chunk_id != -1:
+                    cid = int(chunk_id)
+                    dense_ranks[cid] = rank_idx
+                    dense_scores[cid] = float(score)
+
+        # 2. Retrieve Sparse Candidates from SQLite FTS5 (top 50)
+        fts_matches = self.db.search_fts(query, limit=50)
+        sparse_ranks: Dict[int, int] = {}
+        for rank_idx, match in enumerate(fts_matches, start=1):
+            sparse_ranks[match["chunk_id"]] = rank_idx
+
+        # 3. Reciprocal Rank Fusion (k=60)
+        candidate_ids = set(dense_ranks.keys()) | set(sparse_ranks.keys())
+        if not candidate_ids:
             duration = (time.perf_counter() - start_time) * 1000
             return SearchResponse(query=query, total_results=0, results=[], duration_ms=duration)
 
-        score_map = {int(chunk_id): float(score) for score, chunk_id in zip(scores[0], ids[0]) if chunk_id != -1}
-        embedding_ids = list(score_map.keys())
+        score_map: Dict[int, float] = {}
+        max_rrf = 2.0 / 61.0  # max theoretical RRF score for k=60 across 2 lists
+        for cid in candidate_ids:
+            rrf = 0.0
+            if cid in dense_ranks:
+                rrf += 1.0 / (60.0 + dense_ranks[cid])
+            if cid in sparse_ranks:
+                rrf += 1.0 / (60.0 + sparse_ranks[cid])
 
-        # Retrieve chunk data from database
-        chunk_records = self.db.get_chunks_by_embedding_ids(embedding_ids)
+            rrf_norm = min(rrf / max_rrf, 1.0)
+            if cid in dense_scores:
+                dense_cos = max(dense_scores[cid], 0.0)
+                # Dense similarity carries baseline; RRF rank provides boost
+                fused = 0.65 * dense_cos + 0.35 * rrf_norm
+            else:
+                # Sparse keyword only match
+                fused = 0.45 * rrf_norm + 0.20
+
+            score_map[cid] = round(fused, 4)
+
+        # 4. Retrieve chunk data from database
+        chunk_records = self.db.get_chunks_by_ids(list(candidate_ids))
 
         # Group chunks by file_path
         files_map: Dict[str, Dict[str, Any]] = {}
         for chunk in chunk_records:
             f_path = chunk["file_path"]
-            emb_id = chunk["embedding_id"]
-            c_score = score_map.get(emb_id, 0.0)
+            cid = chunk["id"]
+            c_score = score_map.get(cid, 0.0)
 
             # Strict category filter if user clicked a specific category tab
             if category and chunk["category"].lower() != category.lower():

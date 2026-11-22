@@ -280,7 +280,7 @@ class LensIndexer:
             chunk_ids = self.db.insert_chunks(chunks, file_id)
 
             # 4. Batch Embeddings Generation
-            chunk_texts = [c.chunk_text for c in chunks]
+            chunk_texts = [getattr(c, "embedding_text", c.chunk_text) for c in chunks]
             vectors = self.embedding_engine.encode_texts(chunk_texts)
 
             # 5. Add to FAISS Vector Index (defer disk flush to end of batch)

@@ -94,6 +94,15 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_chunks_embedding_id ON chunks(embedding_id)")
 
+            # FTS5 Full-Text Search Table
+            cursor.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                chunk_text,
+                file_name,
+                chunk_id UNINDEXED
+            )
+            """)
+
             conn.commit()
 
     def upsert_file(
@@ -141,18 +150,24 @@ class DatabaseManager:
     def prune_chunks_for_file(self, file_id: int) -> List[int]:
         """
         Delete old chunks for file_id and return their embedding_ids so vector store can prune them.
+        Keeps chunks_fts in sync.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT embedding_id FROM chunks WHERE file_id = ? AND embedding_id IS NOT NULL", (file_id,))
-            old_ids = [r["embedding_id"] for r in cursor.fetchall()]
+            cursor.execute("SELECT id, embedding_id FROM chunks WHERE file_id = ?", (file_id,))
+            rows = cursor.fetchall()
+            old_ids = [r["embedding_id"] for r in rows if r["embedding_id"] is not None]
+            old_c_ids = [r["id"] for r in rows]
+            if old_c_ids:
+                placeholders = ",".join("?" for _ in old_c_ids)
+                cursor.execute(f"DELETE FROM chunks_fts WHERE chunk_id IN ({placeholders})", old_c_ids)
             cursor.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
             conn.commit()
             return old_ids
 
     def insert_chunks(self, chunks: List[DocumentChunk], file_id: int) -> List[int]:
         """
-        Delete old chunks for file_id and insert new chunks.
+        Delete old chunks for file_id and insert new chunks into both SQLite and FTS5.
         Returns the list of generated chunk IDs (which serve as FAISS embedding IDs).
         """
         now = datetime.now().astimezone().isoformat()
@@ -160,6 +175,12 @@ class DatabaseManager:
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # Clear old chunks from chunks_fts and chunks
+            cursor.execute("SELECT id FROM chunks WHERE file_id = ?", (file_id,))
+            old_c_ids = [r["id"] for r in cursor.fetchall()]
+            if old_c_ids:
+                placeholders = ",".join("?" for _ in old_c_ids)
+                cursor.execute(f"DELETE FROM chunks_fts WHERE chunk_id IN ({placeholders})", old_c_ids)
             cursor.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
 
             for chunk in chunks:
@@ -175,6 +196,10 @@ class DatabaseManager:
                 ))
                 c_id = cursor.lastrowid
                 cursor.execute("UPDATE chunks SET embedding_id = ? WHERE id = ?", (c_id, c_id))
+                cursor.execute(
+                    "INSERT INTO chunks_fts (chunk_text, file_name, chunk_id) VALUES (?, ?, ?)",
+                    (chunk.chunk_text, chunk.file_name, c_id)
+                )
                 chunk.chunk_id = c_id
                 chunk_ids.append(c_id)
 
@@ -257,13 +282,65 @@ class DatabaseManager:
                 return []
             f_id = file_row["id"]
 
-            cursor.execute("SELECT embedding_id FROM chunks WHERE file_id = ?", (f_id,))
+            cursor.execute("SELECT id, embedding_id FROM chunks WHERE file_id = ?", (f_id,))
             chunk_rows = cursor.fetchall()
             emb_ids = [r["embedding_id"] for r in chunk_rows if r["embedding_id"] is not None]
+            c_ids = [r["id"] for r in chunk_rows]
+            if c_ids:
+                placeholders = ",".join("?" for _ in c_ids)
+                cursor.execute(f"DELETE FROM chunks_fts WHERE chunk_id IN ({placeholders})", c_ids)
 
             cursor.execute("DELETE FROM files WHERE id = ?", (f_id,))
             conn.commit()
             return emb_ids
+
+    def get_chunks_by_ids(self, chunk_ids: List[int]) -> List[Dict[str, Any]]:
+        if not chunk_ids:
+            return []
+        placeholders = ",".join("?" for _ in chunk_ids)
+        query = f"""
+        SELECT c.*, f.file_path, f.file_name, f.extension, f.category, f.file_size_bytes, f.modified_at
+        FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        WHERE c.id IN ({placeholders})
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, chunk_ids)
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    def search_fts(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Execute BM25 keyword search across chunks using SQLite FTS5.
+        Returns list of dicts with {"chunk_id": int, "rank": float}.
+        """
+        import re
+        tokens = re.findall(r'[a-zA-Z0-9_\-]+', query.lower())
+        if not tokens:
+            return []
+
+        # Build clean FTS5 query with prefix matching on terms
+        fts_terms = [f'"{tok}"*' for tok in tokens[:12] if len(tok) >= 2]
+        if not fts_terms:
+            return []
+        fts_query = " OR ".join(fts_terms)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                SELECT chunk_id, bm25(chunks_fts) as rank
+                FROM chunks_fts
+                WHERE chunks_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """, (fts_query, limit))
+                rows = cursor.fetchall()
+                return [{"chunk_id": int(r["chunk_id"]), "rank": float(r["rank"])} for r in rows]
+            except Exception as e:
+                logger.debug(f"FTS5 search error for '{fts_query}': {e}")
+                return []
 
     def get_statistics(self) -> Dict[str, Any]:
         with self.get_connection() as conn:

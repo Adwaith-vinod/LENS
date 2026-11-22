@@ -165,6 +165,16 @@ export default function App() {
     setTimeout(() => setCopiedPath(null), 2000);
   };
 
+  const getMatchTier = (score) => {
+    if (score >= 0.70) {
+      return { label: 'Best Match', style: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+    }
+    if (score >= 0.50) {
+      return { label: 'Strong Match', style: 'bg-sky-500/20 text-sky-300 border-sky-500/40' };
+    }
+    return { label: 'Possible Match', style: 'bg-slate-700/40 text-slate-300 border-slate-600/40' };
+  };
+
   const getFileIcon = (ext) => {
     ext = (ext || '').toLowerCase();
     if (['.pdf', '.docx', '.doc', '.txt', '.md', '.rtf'].includes(ext)) return FileText;
@@ -408,6 +418,7 @@ export default function App() {
                 {results.map((item) => {
                   const FileIcon = getFileIcon(item.extension);
                   const matchPercent = Math.min(Math.round(item.relevance_score * 100), 100);
+                  const tier = getMatchTier(item.relevance_score);
 
                   return (
                     <div
@@ -447,8 +458,11 @@ export default function App() {
 
                         {/* Relevance Badge */}
                         <div className="flex items-center space-x-2 flex-shrink-0">
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${tier.style}`}>
+                            {tier.label}
+                          </span>
                           <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-                            {matchPercent}% Match
+                            {matchPercent}%
                           </span>
                         </div>
                       </div>

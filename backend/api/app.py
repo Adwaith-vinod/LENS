@@ -1,5 +1,6 @@
 import logging
 from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -10,14 +11,29 @@ from backend.storage.db import get_db
 from backend.indexing.indexer import get_indexer
 from backend.search.engine import get_search_engine
 from backend.services.file_service import get_file_service
+from backend.embeddings.engine import get_embedding_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("lens.api")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Preload SentenceTransformer model on server startup
+    try:
+        logger.info("Lifespan: preloading embedding model...")
+        get_embedding_engine().get_model()
+        logger.info("Lifespan: embedding model ready.")
+    except Exception as e:
+        logger.warning(f"Lifespan: could not preload embedding model: {e}")
+    yield
+
+
 app = FastAPI(
     title="LENS API",
     description="Intelligent Local File Discovery & Semantic Search API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for local desktop UI
@@ -66,10 +82,17 @@ class OpenFileRequest(BaseModel):
 @app.get("/api/health")
 def health_check():
     stats = get_db().get_statistics()
+    model_loaded = False
+    try:
+        model_loaded = get_embedding_engine().model is not None
+    except Exception:
+        pass
     return {
         "status": "online",
         "app": "LENS",
         "version": "1.0.0",
+        "model_loaded": model_loaded,
+        "model_name": "all-MiniLM-L6-v2",
         "total_files": stats["total_files"],
         "total_chunks": stats["total_chunks"]
     }
